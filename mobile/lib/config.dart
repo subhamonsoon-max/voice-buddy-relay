@@ -1,14 +1,21 @@
 class AppConfig {
-  // Update this to your deployed Render URL or local IP for testing
-  // e.g., 'https://voice-buddy-relay.onrender.com'
+  // Your Render URL hostname (WITHOUT https:// or http://)
   static const String backendHost = 'voice-buddy-relay.onrender.com';
   static const bool useSecure = true;
 
+  // Helper to ensure clean domain even if https:// is accidentally typed
+  static String get _cleanHost => backendHost
+      .replaceAll('https://', '')
+      .replaceAll('http://', '')
+      .replaceAll('wss://', '')
+      .replaceAll('ws://', '')
+      .replaceAll('/', '');
+
   static String get wsUrl =>
-      '${useSecure ? "wss" : "ws"}://$backendHost/ws/audio';
+      '${useSecure ? "wss" : "ws"}://$_cleanHost/ws/audio';
 
   static String get httpUrl =>
-      '${useSecure ? "https" : "http"}://$backendHost';
+      '${useSecure ? "https" : "http"}://$_cleanHost';
 
   // Parent PIN to unlock session summaries
   static const String parentPin = '1234';
