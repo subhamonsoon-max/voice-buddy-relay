@@ -216,10 +216,10 @@ class _AvatarScreenState extends State<AvatarScreen> {
                 // Status text
                 Text(
                   _avatarState == AvatarState.listening
-                      ? 'Listening to you...'
+                      ? 'Listening to you... (Tap to Pause)'
                       : _avatarState == AvatarState.talking
                           ? 'Anvi is speaking...'
-                          : 'Hold button & talk to Anvi',
+                          : 'Tap to start talking to Anvi',
                   style: TextStyle(
                     color: _avatarState == AvatarState.listening
                         ? const Color(0xFF4ADE80)
@@ -231,15 +231,13 @@ class _AvatarScreenState extends State<AvatarScreen> {
 
                 const SizedBox(height: 24),
 
-                // Hold to Talk Button
+                // Tap to Start / Tap to Stop Button
                 GestureDetector(
-                  onTapDown: (_) => _wsService.onHoldStart(),
-                  onTapUp: (_) => _wsService.onHoldStop(),
-                  onTapCancel: () => _wsService.onHoldStop(),
+                  onTap: () => _wsService.toggleListening(),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: _avatarState == AvatarState.listening ? 100 : 88,
-                    height: _avatarState == AvatarState.listening ? 100 : 88,
+                    duration: const Duration(milliseconds: 200),
+                    width: _avatarState == AvatarState.listening ? 96 : 84,
+                    height: _avatarState == AvatarState.listening ? 96 : 84,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
@@ -261,8 +259,8 @@ class _AvatarScreenState extends State<AvatarScreen> {
                                   ? const Color(0xFF22C55E)
                                   : const Color(0xFF6366F1))
                               .withValues(alpha: 0.5),
-                          blurRadius: 20,
-                          spreadRadius: 4,
+                          blurRadius: 24,
+                          spreadRadius: _avatarState == AvatarState.listening ? 6 : 2,
                         ),
                       ],
                     ),
@@ -271,7 +269,7 @@ class _AvatarScreenState extends State<AvatarScreen> {
                           ? Icons.mic
                           : Icons.mic_none,
                       color: Colors.white,
-                      size: 40,
+                      size: 42,
                     ),
                   ),
                 ),

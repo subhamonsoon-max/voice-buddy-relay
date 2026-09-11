@@ -113,26 +113,42 @@ class WebSocketService {
     }
   }
 
-  /// Child pressed talk button: start mic stream
-  Future<void> onHoldStart() async {
+  /// Toggle continuous listening mode (Tap to Start / Tap to Stop)
+  Future<void> toggleListening() async {
     if (_status != ConnectionStatus.connected) return;
 
-    // Interrupt any ongoing model playback
-    await audioService.stopPlayback();
-    _sendJson({'type': 'interrupt'});
+    if (audioService.isRecording) {
+      // User tapped to Stop/Pause
+      await audioService.stopRecording();
+      _sendJson({'type': 'end_of_turn'});
+      _setAvatarState(AvatarState.idle);
+    } else {
+      // User tapped to Start continuous voice call
+      await audioService.stopPlayback();
+      _setAvatarState(AvatarState.listening);
+      await audioService.startRecording();
+    }
+  }
 
+  /// Start recording (for tap to start)
+  Future<void> startListening() async {
+    if (_status != ConnectionStatus.connected || audioService.isRecording) return;
+    await audioService.stopPlayback();
     _setAvatarState(AvatarState.listening);
     await audioService.startRecording();
   }
 
-  /// Child released talk button: stop mic stream & send turn end
-  Future<void> onHoldStop() async {
-    if (_status != ConnectionStatus.connected) return;
-
+  /// Stop recording (for tap to stop)
+  Future<void> stopListening() async {
+    if (!audioService.isRecording) return;
     await audioService.stopRecording();
     _sendJson({'type': 'end_of_turn'});
     _setAvatarState(AvatarState.idle);
   }
+
+  /// Backward compatible hold methods
+  Future<void> onHoldStart() async => startListening();
+  Future<void> onHoldStop() async => stopListening();
 
   void _sendJson(Map<String, dynamic> jsonMap) {
     if (_channel != null && _status == ConnectionStatus.connected) {
