@@ -1,0 +1,170 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'audio_stream_service.dart';
+
+enum ConnectionStatus {
+  disconnected,
+  connecting,
+  connected,
+  error,
+}
+
+enum AvatarState {
+  idle,
+  listening,
+  talking,
+}
+
+class WebSocketService {
+  final AudioStreamService audioService;
+  WebSocketChannel? _channel;
+  StreamSubscription? _wsSubscription;
+  StreamSubscription? _audioRecordSubscription;
+
+  ConnectionStatus _status = ConnectionStatus.disconnected;
+  AvatarState _avatarState = AvatarState.idle;
+
+  final StreamController<ConnectionStatus> _statusController =
+      StreamController<ConnectionStatus>.broadcast();
+  final StreamController<AvatarState> _avatarStateController =
+      StreamController<AvatarState>.broadcast();
+  final StreamController<String> _transcriptController =
+      StreamController<String>.broadcast();
+
+  Stream<ConnectionStatus> get onStatusChanged => _statusController.stream;
+  Stream<AvatarState> get onAvatarStateChanged => _avatarStateController.stream;
+  Stream<String> get onTranscript => _transcriptController.stream;
+
+  ConnectionStatus get status => _status;
+  AvatarState get avatarState => _avatarState;
+
+  WebSocketService({required this.audioService});
+
+  /// Connect to the Python Relay server WebSocket
+  Future<void> connect(String wsUrl) async {
+    if (_status == ConnectionStatus.connected ||
+        _status == ConnectionStatus.connecting) {
+      return;
+    }
+
+    _setStatus(ConnectionStatus.connecting);
+
+    try {
+      final uri = Uri.parse(wsUrl);
+      _channel = WebSocketChannel.connect(uri);
+      await _channel!.ready;
+
+      _setStatus(ConnectionStatus.connected);
+      _setAvatarState(AvatarState.idle);
+
+      // Listen for incoming messages from backend
+      _wsSubscription = _channel!.stream.listen(
+        _handleIncomingMessage,
+        onError: (error) {
+          _setStatus(ConnectionStatus.error);
+          _setAvatarState(AvatarState.idle);
+        },
+        onDone: () {
+          _setStatus(ConnectionStatus.disconnected);
+          _setAvatarState(AvatarState.idle);
+        },
+      );
+
+      // Listen for recorded mic audio frames from AudioStreamService
+      _audioRecordSubscription =
+          audioService.onAudioRecorded.listen((Uint8List pcmChunk) {
+        if (_status == ConnectionStatus.connected) {
+          _channel?.sink.add(pcmChunk);
+        }
+      });
+    } catch (e) {
+      _setStatus(ConnectionStatus.error);
+    }
+  }
+
+  void _handleIncomingMessage(dynamic message) {
+    if (message is Uint8List) {
+      // Received raw PCM audio chunk from Gemini Live
+      _setAvatarState(AvatarState.talking);
+      audioService.playAudioChunk(message);
+    } else if (message is List<int>) {
+      final bytes = Uint8List.fromList(message);
+      _setAvatarState(AvatarState.talking);
+      audioService.playAudioChunk(bytes);
+    } else if (message is String) {
+      try {
+        final Map<String, dynamic> data = jsonDecode(message);
+        final String? type = data['type'];
+
+        if (type == 'interrupted') {
+          audioService.stopPlayback();
+          _setAvatarState(AvatarState.idle);
+        } else if (type == 'turn_complete') {
+          _setAvatarState(AvatarState.idle);
+        } else if (type == 'transcript') {
+          final text = data['text'] ?? '';
+          _transcriptController.add(text);
+        }
+      } catch (e) {
+        // Ignored
+      }
+    }
+  }
+
+  /// Child pressed talk button: start mic stream
+  Future<void> onHoldStart() async {
+    if (_status != ConnectionStatus.connected) return;
+
+    // Interrupt any ongoing model playback
+    await audioService.stopPlayback();
+    _sendJson({'type': 'interrupt'});
+
+    _setAvatarState(AvatarState.listening);
+    await audioService.startRecording();
+  }
+
+  /// Child released talk button: stop mic stream & send turn end
+  Future<void> onHoldStop() async {
+    if (_status != ConnectionStatus.connected) return;
+
+    await audioService.stopRecording();
+    _sendJson({'type': 'end_of_turn'});
+    _setAvatarState(AvatarState.idle);
+  }
+
+  void _sendJson(Map<String, dynamic> jsonMap) {
+    if (_channel != null && _status == ConnectionStatus.connected) {
+      _channel!.sink.add(jsonEncode(jsonMap));
+    }
+  }
+
+  void _setStatus(ConnectionStatus s) {
+    _status = s;
+    _statusController.add(s);
+  }
+
+  void _setAvatarState(AvatarState s) {
+    _avatarState = s;
+    _avatarStateController.add(s);
+  }
+
+  Future<void> disconnect() async {
+    await audioService.stopRecording();
+    await audioService.stopPlayback();
+    await _audioRecordSubscription?.cancel();
+    await _wsSubscription?.cancel();
+    await _channel?.sink.close();
+    _channel = null;
+    _setStatus(ConnectionStatus.disconnected);
+    _setAvatarState(AvatarState.idle);
+  }
+
+  void dispose() {
+    disconnect();
+    _statusController.close();
+    _avatarStateController.close();
+    _transcriptController.close();
+  }
+}
