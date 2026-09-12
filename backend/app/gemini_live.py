@@ -203,8 +203,8 @@ class GeminiLiveRelay:
                             # Send raw PCM audio binary frame to client
                             await self.client_ws.send_bytes(raw_audio)
 
-                        # Text or thought from Gemini if present
-                        if part.text:
+                        # Spoken text from Gemini (skip internal thought parts)
+                        if part.text and not getattr(part, 'thought', False):
                             self.transcript_entries.append(f"Anvi: {part.text}")
                             await self.client_ws.send_text(
                                 json.dumps({"type": "transcript", "role": "model", "text": part.text})
