@@ -6,6 +6,7 @@ import android.media.*
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -16,6 +17,7 @@ import java.util.concurrent.Executors
 class MainActivity : FlutterActivity() {
     private val METHOD_CHANNEL = "com.voicebuddy.audio/pcm_control"
     private val EVENT_CHANNEL = "com.voicebuddy.audio/pcm_record_stream"
+    private val PERMISSION_REQUEST_CODE = 1001
 
     private val inputSampleRate = 16000
     private val outputSampleRate = 24000
@@ -29,6 +31,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // Request audio recording permission on startup
+        requestMicPermission()
 
         // Setup EventChannel for streaming recorded microphone PCM chunks
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
@@ -74,6 +79,29 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+    private fun requestMicPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted
+            }
+        }
+    }
+
     private fun initAudioTrack() {
         try {
             val minBufferSize = AudioTrack.getMinBufferSize(
@@ -110,16 +138,8 @@ class MainActivity : FlutterActivity() {
     private fun startPcmRecording() {
         if (isRecording) return
 
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.RECORD_AUDIO),
-                1001
-            )
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestMicPermission()
             return
         }
 

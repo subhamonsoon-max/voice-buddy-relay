@@ -22,9 +22,7 @@ class _AvatarScreenState extends State<AvatarScreen> {
   AvatarState _avatarState = AvatarState.idle;
   ConnectionStatus _connectionStatus = ConnectionStatus.disconnected;
   double _audioAmplitude = 0.0;
-  bool _isWifi = true;
   String _liveSubtitle = '';
-
   StreamSubscription? _stateSub;
   StreamSubscription? _connSub;
   StreamSubscription? _ampSub;
@@ -42,11 +40,8 @@ class _AvatarScreenState extends State<AvatarScreen> {
     _networkGuard.init();
 
     _wifiSub = _networkGuard.onWifiChanged.listen((isWifi) {
-      setState(() => _isWifi = isWifi);
-      if (isWifi && _connectionStatus == ConnectionStatus.disconnected) {
+      if (isWifi && _connectionStatus != ConnectionStatus.connected) {
         _wsService.connect(AppConfig.wsUrl);
-      } else if (!isWifi) {
-        _wsService.disconnect();
       }
     });
 
@@ -286,41 +281,7 @@ class _AvatarScreenState extends State<AvatarScreen> {
               ],
             ),
 
-            // Wi-Fi Guard Overlay (when not on Wi-Fi)
-            if (!_isWifi)
-              Container(
-                color: Colors.black.withValues(alpha: 0.85),
-                padding: const EdgeInsets.all(32),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.wifi_off_rounded,
-                          size: 64, color: Colors.amber),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Please Connect to Wi-Fi',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Voice Buddy needs Wi-Fi to keep audio running smoothly without using mobile data.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Check Connection'),
-                        onPressed: () => _networkGuard.init(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+
           ],
         ),
       ),
