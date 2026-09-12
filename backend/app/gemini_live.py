@@ -35,11 +35,7 @@ class GeminiLiveRelay:
         )
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY, vertexai=False)
-        model_name = (
-            settings.LIVE_MODEL
-            if settings.LIVE_MODEL.startswith("models/")
-            else f"models/{settings.LIVE_MODEL}"
-        )
+        model_name = settings.LIVE_MODEL  # Use as-is (reference project style)
 
         config = types.LiveConnectConfig(
             response_modalities=[types.Modality.AUDIO],

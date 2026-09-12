@@ -10,8 +10,7 @@ class Settings(BaseModel):
     PORT: int = int(os.getenv("PORT", "8000"))
     HOST: str = os.getenv("HOST", "0.0.0.0")
     
-    # Google AI Studio Gemini Live Model (Real-time Audio Dialog — unchanged)
-    LIVE_MODEL: str = os.getenv("LIVE_MODEL", "models/gemini-2.5-flash-native-audio-latest")
+    LIVE_MODEL: str = os.getenv("LIVE_MODEL", "gemini-3.1-flash-live-preview")
 
     # Post-session Summarizer: Groq free tier (only summarizer)
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
