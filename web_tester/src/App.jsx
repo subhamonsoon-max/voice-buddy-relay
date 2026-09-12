@@ -90,8 +90,18 @@ export default function App() {
 
   // Connect WebSocket
   const connectWs = (endpoint = selectedEndpoint) => {
+    // Clear any pending reconnect timer first
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    // Kill old socket WITHOUT triggering its onclose reconnect
     if (wsRef.current) {
+      wsRef.current.onclose = null; // ← prevents old socket from scheduling another reconnect
+      wsRef.current.onerror = null;
       wsRef.current.close();
+      wsRef.current = null;
     }
 
     setConnectionStatus('connecting');
@@ -141,19 +151,19 @@ export default function App() {
         }
       };
 
-      ws.onerror = (err) => {
-        setConnectionStatus('error');
+      ws.onerror = () => {
         addLog('err', 'WebSocket connection error occurred.');
       };
 
       ws.onclose = () => {
+        // Only reconnect if this is still the current socket (not already replaced)
+        if (wsRef.current !== ws) return;
         setConnectionStatus('disconnected');
         setAvatarState('idle');
-        addLog('ws', 'WebSocket disconnected. Will retry connecting in 3s...');
-        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        addLog('ws', 'WebSocket disconnected. Will retry in 4s...');
         reconnectTimeoutRef.current = setTimeout(() => {
-          connectWs(selectedEndpoint);
-        }, 3000);
+          connectWs(endpoint);
+        }, 4000);
       };
     } catch (e) {
       setConnectionStatus('error');
