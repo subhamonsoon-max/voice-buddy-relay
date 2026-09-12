@@ -9,9 +9,17 @@ class Settings(BaseModel):
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     PORT: int = int(os.getenv("PORT", "8000"))
     HOST: str = os.getenv("HOST", "0.0.0.0")
-    # Google AI Studio Gemini models
+    
+    # Google AI Studio Gemini Live Model (Unchanged)
     LIVE_MODEL: str = os.getenv("LIVE_MODEL", "models/gemini-2.5-flash-native-audio-latest")
+    
+    # Primary Summarizer Model (Gemini Flash)
     FLASH_MODEL: str = os.getenv("FLASH_MODEL", "gemini-2.5-flash")
+    
+    # Optional Free Fallback Summarizer (Groq)
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    
     VOICE_NAME: str = os.getenv("VOICE_NAME", "Aoede")  # Options: Aoede, Puck, Charon, Fenrir, Kore
 
 settings = Settings()
