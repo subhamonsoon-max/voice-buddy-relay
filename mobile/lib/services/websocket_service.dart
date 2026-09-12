@@ -115,12 +115,16 @@ class WebSocketService {
           // Server keepalive — ignore silently
         } else if (type == 'status' && data['status'] == 'ready') {
           _setStatus(ConnectionStatus.connected);
-          _setAvatarState(AvatarState.idle);
-        } else if (type == 'interrupted') {
+          _setAvatarState(AvatarState.listening);
+          // Auto-start continuous microphone streaming (direct conversation mode)
+          if (!audioService.isRecording) {
+            audioService.startRecording();
+          }
+        } else if (type == 'clear_audio' || type == 'interrupted') {
           audioService.stopPlayback();
-          _setAvatarState(AvatarState.idle);
+          _setAvatarState(AvatarState.listening);
         } else if (type == 'turn_complete') {
-          _setAvatarState(AvatarState.idle);
+          _setAvatarState(AvatarState.listening);
         } else if (type == 'transcript') {
           final text = data['text'] ?? '';
           _transcriptController.add(text);
