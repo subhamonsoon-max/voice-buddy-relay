@@ -111,7 +111,9 @@ class WebSocketService {
         final Map<String, dynamic> data = jsonDecode(message);
         final String? type = data['type'];
 
-        if (type == 'status' && data['status'] == 'ready') {
+        if (type == 'ping') {
+          // Server keepalive — ignore silently
+        } else if (type == 'status' && data['status'] == 'ready') {
           _setStatus(ConnectionStatus.connected);
           _setAvatarState(AvatarState.idle);
         } else if (type == 'interrupted') {

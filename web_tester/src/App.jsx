@@ -118,7 +118,9 @@ export default function App() {
         } else if (typeof event.data === 'string') {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === 'status' && data.status === 'ready') {
+            if (data.type === 'ping') {
+              // Server keepalive - ignore silently
+            } else if (data.type === 'status' && data.status === 'ready') {
               setConnectionStatus('connected');
               setAvatarState('idle');
               addLog('gemini', 'Gemini Live Session Ready! (Model: gemini-2.5-flash-native-audio-latest)');

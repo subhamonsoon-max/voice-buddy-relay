@@ -69,10 +69,11 @@ class GeminiLiveRelay:
 
                 task_in = asyncio.create_task(self._client_to_gemini(session))
                 task_out = asyncio.create_task(self._gemini_to_client(session))
+                task_ping = asyncio.create_task(self._ping_client())
 
                 # Wait until one task terminates or stop event is set
                 done, pending = await asyncio.wait(
-                    [task_in, task_out],
+                    [task_in, task_out, task_ping],
                     return_when=asyncio.FIRST_COMPLETED,
                 )
 
@@ -89,6 +90,23 @@ class GeminiLiveRelay:
                 pass
 
         return "\n".join(self.transcript_entries)
+
+    async def _ping_client(self) -> None:
+        """Sends a lightweight ping to the client every 20s to prevent Render proxy from
+        dropping idle WebSocket connections (Render drops idle WS after ~30s)."""
+        try:
+            while not self._stop_event.is_set():
+                await asyncio.sleep(20)
+                if self._stop_event.is_set():
+                    break
+                await self.client_ws.send_text(
+                    json.dumps({"type": "ping"})
+                )
+                logger.debug("Sent keepalive ping to client.")
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            self._stop_event.set()
 
     async def _client_to_gemini(self, session) -> None:
         """Pipes incoming audio/messages from mobile client WebSocket to Gemini Live."""
