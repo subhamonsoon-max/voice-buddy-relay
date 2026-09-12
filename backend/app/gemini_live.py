@@ -68,6 +68,19 @@ class GeminiLiveRelay:
                     json.dumps({"type": "status", "status": "ready"})
                 )
 
+                # Reference pattern: send greeting trigger so Anvi speaks first
+                greeting = "Greet the child warmly now and ask what they'd like to talk about or play today."
+                await session.send_client_content(
+                    turns=[
+                        types.Content(
+                            role="user",
+                            parts=[types.Part(text=greeting)],
+                        )
+                    ],
+                    turn_complete=True,
+                )
+                logger.info("Sent greeting trigger — Anvi will speak first.")
+
                 task_in = asyncio.create_task(self._client_to_gemini(session))
                 task_out = asyncio.create_task(self._gemini_to_client(session))
                 task_ping = asyncio.create_task(self._ping_client())
@@ -179,9 +192,11 @@ class GeminiLiveRelay:
                     continue
 
                 if server_content.interrupted:
+                    # Reference pattern: clear_audio tells client to flush its playback queue
                     await self.client_ws.send_text(
-                        json.dumps({"type": "interrupted"})
+                        json.dumps({"type": "clear_audio"})
                     )
+                    logger.info("Barge-in detected — sent clear_audio to client.")
                     continue
 
                 if server_content.model_turn:

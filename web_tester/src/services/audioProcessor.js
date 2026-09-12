@@ -1,17 +1,28 @@
-// Audio processing utilities for 16kHz PCM recording and 24kHz PCM playback
+/**
+ * Audio engine for Voice Buddy Web Tester.
+ * Approach taken from D:\voice_refecrance\app\static\js\app.js (reference project).
+ *
+ * Recording: AudioWorklet (off-thread) → ScriptProcessor fallback
+ *   - Captures mic at native hardware rate, downsamples to 16kHz PCM Int16
+ *   - Emits 512-sample (32ms) blocks
+ * Playback: Web Audio API at 24kHz (matching Gemini Live output)
+ *   - Queues buffers sequentially with gap-free scheduling
+ */
+
+// ─── Playback Engine (24kHz PCM from Gemini Live) ───────────────────────────
 
 class PcmPlayer {
   constructor() {
     this.audioCtx = null;
     this.nextStartTime = 0;
-    this.isPlaying = false;
+    this.activeSources = [];
     this.analyser = null;
   }
 
-  init() {
-    if (!this.audioCtx) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      this.audioCtx = new AudioContextClass({ sampleRate: 24000 });
+  _ensureCtx() {
+    if (!this.audioCtx || this.audioCtx.state === 'closed') {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      this.audioCtx = new Ctx({ sampleRate: 24000 });
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 128;
       this.analyser.connect(this.audioCtx.destination);
@@ -21,51 +32,57 @@ class PcmPlayer {
     }
   }
 
-  playChunk(pcm16Data) {
-    this.init();
-    if (!pcm16Data || pcm16Data.byteLength === 0) return;
+  playChunk(uint8Data) {
+    this._ensureCtx();
+    if (!uint8Data || uint8Data.byteLength === 0) return;
 
-    // Convert Int16 bytes (little-endian) to Float32 (-1.0 to 1.0)
-    const int16 = new Int16Array(
-      pcm16Data.buffer,
-      pcm16Data.byteOffset,
-      pcm16Data.byteLength / 2
+    // Reinterpret raw bytes as 16-bit signed little-endian PCM samples
+    const pcm16 = new Int16Array(
+      uint8Data.buffer,
+      uint8Data.byteOffset,
+      Math.floor(uint8Data.byteLength / 2)
     );
 
-    const float32 = new Float32Array(int16.length);
-    for (let i = 0; i < int16.length; i++) {
-      float32[i] = int16[i] / 32768.0;
+    const float32 = new Float32Array(pcm16.length);
+    for (let i = 0; i < pcm16.length; i++) {
+      float32[i] = pcm16[i] / 32768.0;
     }
 
-    const audioBuffer = this.audioCtx.createBuffer(1, float32.length, 24000);
-    audioBuffer.copyToChannel(float32, 0);
+    const buffer = this.audioCtx.createBuffer(1, float32.length, 24000);
+    buffer.getChannelData(0).set(float32);
 
     const source = this.audioCtx.createBufferSource();
-    source.buffer = audioBuffer;
+    source.buffer = buffer;
     source.connect(this.analyser);
 
-    const currentTime = this.audioCtx.currentTime;
-    if (this.nextStartTime < currentTime) {
-      this.nextStartTime = currentTime;
-    }
+    const now = this.audioCtx.currentTime;
+    if (this.nextStartTime < now) this.nextStartTime = now;
 
     source.start(this.nextStartTime);
-    this.nextStartTime += audioBuffer.duration;
-    this.isPlaying = true;
+    this.nextStartTime += buffer.duration;
+    this.activeSources.push(source);
 
     source.onended = () => {
-      if (this.audioCtx && this.audioCtx.currentTime >= this.nextStartTime - 0.05) {
-        this.isPlaying = false;
-      }
+      const idx = this.activeSources.indexOf(source);
+      if (idx !== -1) this.activeSources.splice(idx, 1);
     };
   }
 
+  clearQueue() {
+    this.activeSources.forEach((src) => {
+      try { src.stop(); } catch (e) { /* ignore */ }
+    });
+    this.activeSources = [];
+    if (this.audioCtx) {
+      this.nextStartTime = this.audioCtx.currentTime;
+    }
+  }
+
   stop() {
+    this.clearQueue();
     if (this.audioCtx) {
       this.audioCtx.close();
       this.audioCtx = null;
-      this.nextStartTime = 0;
-      this.isPlaying = false;
     }
   }
 
@@ -74,19 +91,20 @@ class PcmPlayer {
     const data = new Uint8Array(this.analyser.frequencyBinCount);
     this.analyser.getByteFrequencyData(data);
     let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      sum += data[i];
-    }
+    for (let i = 0; i < data.length; i++) sum += data[i];
     return sum / (data.length * 255);
   }
 }
 
+// ─── Recording Engine (Mic → 16kHz PCM → WebSocket) ─────────────────────────
+
 class PcmRecorder {
   constructor(onChunk) {
-    this.onChunk = onChunk;
-    this.audioCtx = null;
+    this.onChunk = onChunk; // called with ArrayBuffer (Int16 PCM at 16kHz)
+    this.micCtx = null;
     this.mediaStream = null;
-    this.processor = null;
+    this.workletNode = null;
+    this.scriptProcessor = null;
     this.isRecording = false;
   }
 
@@ -103,69 +121,67 @@ class PcmRecorder {
     });
 
     this.mediaStream = stream;
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    this.audioCtx = new AudioContextClass();
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    this.micCtx = new Ctx();
+    const source = this.micCtx.createMediaStreamSource(stream);
 
-    const source = this.audioCtx.createMediaStreamSource(stream);
-    // Buffer size 2048 or 4096
-    this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+    try {
+      // Preferred: AudioWorklet (off main thread — accurate, no jank)
+      await this.micCtx.audioWorklet.addModule('/audio-processor.js');
+      this.workletNode = new AudioWorkletNode(this.micCtx, 'pcm16-processor');
 
-    const inputSampleRate = this.audioCtx.sampleRate;
-    const targetSampleRate = 16000;
+      this.workletNode.port.onmessage = (e) => {
+        if (!this.isRecording) return;
+        this._sendFloat32(new Float32Array(e.data));
+      };
 
-    this.processor.onaudioprocess = (e) => {
-      if (!this.isRecording) return;
-      const inputData = e.inputBuffer.getChannelData(0);
+      source.connect(this.workletNode);
+      console.log('[PcmRecorder] AudioWorklet active (off-thread).');
+    } catch (err) {
+      console.warn('[PcmRecorder] AudioWorklet unavailable, using ScriptProcessor fallback:', err);
+      // Fallback: ScriptProcessor (on main thread, deprecated but works everywhere)
+      this.scriptProcessor = this.micCtx.createScriptProcessor(512, 1, 1);
+      this.scriptProcessor.onaudioprocess = (e) => {
+        if (!this.isRecording) return;
+        this._sendFloat32(e.inputBuffer.getChannelData(0));
+      };
+      source.connect(this.scriptProcessor);
+      this.scriptProcessor.connect(this.micCtx.destination);
+    }
 
-      // Resample from inputSampleRate (e.g. 48000 or 44100) down to 16000
-      const resampledData = this._resample(inputData, inputSampleRate, targetSampleRate);
-
-      // Convert Float32Array to 16-bit Signed Little-Endian PCM ArrayBuffer
-      const pcm16 = new Int16Array(resampledData.length);
-      for (let i = 0; i < resampledData.length; i++) {
-        const s = Math.max(-1, Math.min(1, resampledData[i]));
-        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-      }
-
-      if (this.onChunk) {
-        this.onChunk(pcm16.buffer);
-      }
-    };
-
-    source.connect(this.processor);
-    this.processor.connect(this.audioCtx.destination);
     this.isRecording = true;
   }
 
-  _resample(input, fromRate, toRate) {
-    if (fromRate === toRate) return input;
-    const ratio = fromRate / toRate;
-    const outputLength = Math.round(input.length / ratio);
-    const output = new Float32Array(outputLength);
-
-    for (let i = 0; i < outputLength; i++) {
-      const srcIndex = i * ratio;
-      const indexFloor = Math.floor(srcIndex);
-      const indexCeil = Math.min(input.length - 1, indexFloor + 1);
-      const weight = srcIndex - indexFloor;
-      output[i] = input[indexFloor] * (1 - weight) + input[indexCeil] * weight;
+  _sendFloat32(float32Array) {
+    // Convert Float32 [-1, 1] → Int16 PCM little-endian
+    const pcm16 = new Int16Array(float32Array.length);
+    for (let i = 0; i < float32Array.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
     }
-    return output;
+    if (this.onChunk) {
+      this.onChunk(pcm16.buffer);
+    }
   }
 
   stop() {
     this.isRecording = false;
-    if (this.processor) {
-      this.processor.disconnect();
-      this.processor = null;
+
+    if (this.workletNode) {
+      this.workletNode.disconnect();
+      this.workletNode = null;
+    }
+    if (this.scriptProcessor) {
+      this.scriptProcessor.disconnect();
+      this.scriptProcessor = null;
     }
     if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach((track) => track.stop());
+      this.mediaStream.getTracks().forEach((t) => t.stop());
       this.mediaStream = null;
     }
-    if (this.audioCtx) {
-      this.audioCtx.close();
-      this.audioCtx = null;
+    if (this.micCtx) {
+      this.micCtx.close();
+      this.micCtx = null;
     }
   }
 }

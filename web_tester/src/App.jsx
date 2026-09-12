@@ -133,13 +133,14 @@ export default function App() {
             } else if (data.type === 'status' && data.status === 'ready') {
               setConnectionStatus('connected');
               setAvatarState('idle');
-              addLog('gemini', 'Gemini Live Session Ready! (Model: gemini-2.5-flash-native-audio-latest)');
-            } else if (data.type === 'interrupted') {
-              addLog('gemini', 'User interrupted Gemini. Playback flushed.');
-              if (pcmPlayerRef.current) pcmPlayerRef.current.stop();
+              addLog('gemini', 'Gemini Live Ready! Anvi will greet you now...');
+            } else if (data.type === 'clear_audio') {
+              // Reference pattern: barge-in detected — flush audio queue immediately
+              if (pcmPlayerRef.current) pcmPlayerRef.current.clearQueue();
               setAvatarState('idle');
+              addLog('gemini', 'Barge-in — audio queue cleared.');
             } else if (data.type === 'turn_complete') {
-              addLog('gemini', 'Turn completed. Anvi finished speaking.');
+              addLog('gemini', 'Anvi finished speaking.');
               setAvatarState('idle');
             } else if (data.type === 'transcript') {
               setLiveSubtitle(data.text);
