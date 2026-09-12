@@ -99,14 +99,10 @@ class GeminiLiveRelay:
                 if "bytes" in message and message["bytes"]:
                     # Raw PCM audio frame from client microphone
                     pcm_chunk = message["bytes"]
-                    await session.send(
-                        input=types.LiveClientRealtimeInput(
-                            media_chunks=[
-                                types.Blob(
-                                    data=pcm_chunk,
-                                    mime_type="audio/pcm;rate=16000",
-                                )
-                            ]
+                    await session.send_realtime_input(
+                        media=types.Blob(
+                            data=pcm_chunk,
+                            mime_type="audio/pcm;rate=16000",
                         )
                     )
                 elif "text" in message and message["text"]:
@@ -116,24 +112,24 @@ class GeminiLiveRelay:
 
                         if msg_type == "end_of_turn" or msg_type == "hold_stop":
                             # Child finished speaking/released talk button
-                            await session.send(end_of_turn=True)
-                            logger.debug("Sent end_of_turn signal to Gemini")
+                            await session.send_client_content(turn_complete=True)
+                            logger.debug("Sent turn_complete signal to Gemini")
                         elif msg_type == "interrupt":
-                            # Child pressed talk while avatar was speaking
-                            await session.send(
-                                input=types.LiveClientRealtimeInput(
-                                    media_chunks=[]
-                                ),
-                                end_of_turn=False,
-                            )
+                            # User interrupted
+                            pass
                         elif msg_type == "text_turn":
                             # Child typed or sent text transcript directly
                             user_text = data.get("text", "")
                             if user_text:
                                 self.transcript_entries.append(f"Child: {user_text}")
-                                await session.send(
-                                    input=user_text,
-                                    end_of_turn=True,
+                                await session.send_client_content(
+                                    turns=[
+                                        types.Content(
+                                            parts=[types.Part.from_text(text=user_text)],
+                                            role="user",
+                                        )
+                                    ],
+                                    turn_complete=True,
                                 )
                     except json.JSONDecodeError:
                         logger.warning(f"Unrecognized text payload from client: {message['text']}")
