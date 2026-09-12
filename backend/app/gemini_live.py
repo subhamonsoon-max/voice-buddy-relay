@@ -25,6 +25,7 @@ class GeminiLiveRelay:
         self.summaries = summaries
         self.transcript_entries: List[str] = []
         self._stop_event = asyncio.Event()
+        self._audio_chunks_sent: int = 0  # guard: only send turn_complete after real audio
 
     async def run(self) -> str:
         """Starts bidirectional relay and returns the aggregated transcript upon completion."""
@@ -123,15 +124,20 @@ class GeminiLiveRelay:
                             mime_type="audio/pcm;rate=16000",
                         )
                     )
+                    self._audio_chunks_sent += 1
                 elif "text" in message and message["text"]:
                     try:
                         data = json.loads(message["text"])
                         msg_type = data.get("type")
 
                         if msg_type == "end_of_turn" or msg_type == "hold_stop":
-                            # Child finished speaking/released talk button
-                            await session.send_client_content(turn_complete=True)
-                            logger.debug("Sent turn_complete signal to Gemini")
+                            # Only signal turn_complete if we actually streamed audio
+                            if self._audio_chunks_sent > 0:
+                                await session.send_client_content(turn_complete=True)
+                                logger.debug(f"Sent turn_complete after {self._audio_chunks_sent} audio chunks")
+                                self._audio_chunks_sent = 0
+                            else:
+                                logger.debug("Ignoring end_of_turn — no audio chunks sent yet")
                         elif msg_type == "interrupt":
                             # User interrupted
                             pass
