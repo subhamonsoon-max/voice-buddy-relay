@@ -10,16 +10,13 @@ class Settings(BaseModel):
     PORT: int = int(os.getenv("PORT", "8000"))
     HOST: str = os.getenv("HOST", "0.0.0.0")
     
-    # Google AI Studio Gemini Live Model (Real-time Audio Dialog)
+    # Google AI Studio Gemini Live Model (Real-time Audio Dialog — unchanged)
     LIVE_MODEL: str = os.getenv("LIVE_MODEL", "models/gemini-2.5-flash-native-audio-latest")
-    
-    # Primary Summarizer Model (Gemini Flash)
-    FLASH_MODEL: str = os.getenv("FLASH_MODEL", "gemini-3.6-flash")
-    
-    # Optional Free Fallback Summarizer (Groq)
+
+    # Post-session Summarizer: Groq free tier (only summarizer)
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
-    
+
     VOICE_NAME: str = os.getenv("VOICE_NAME", "Aoede")  # Options: Aoede, Puck, Charon, Fenrir, Kore
 
 settings = Settings()
