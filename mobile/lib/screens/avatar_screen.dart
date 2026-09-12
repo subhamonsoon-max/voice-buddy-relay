@@ -146,34 +146,42 @@ class _AvatarScreenState extends State<AvatarScreen> {
               ),
             ),
 
-            // Connection indicator in top-left
+            // Connection indicator in top-left (Tappable to retry)
             Positioned(
               top: 16,
               left: 16,
-              child: Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _connectionStatus == ConnectionStatus.connected
-                          ? const Color(0xFF4ADE80)
-                          : _connectionStatus == ConnectionStatus.connecting
-                              ? Colors.amber
-                              : Colors.redAccent,
-                    ),
+              child: GestureDetector(
+                onTap: () {
+                  _wsService.connect(AppConfig.wsUrl);
+                },
+                child: Container(
+                  color: Colors.transparent,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _connectionStatus == ConnectionStatus.connected
+                              ? const Color(0xFF4ADE80)
+                              : _connectionStatus == ConnectionStatus.connecting
+                                  ? Colors.amber
+                                  : Colors.redAccent,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _connectionStatus == ConnectionStatus.connected
+                            ? 'Anvi is ready'
+                            : _connectionStatus == ConnectionStatus.connecting
+                                ? 'Connecting...'
+                                : 'Offline (Tap to retry)',
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _connectionStatus == ConnectionStatus.connected
-                        ? 'Anvi is ready'
-                        : _connectionStatus == ConnectionStatus.connecting
-                            ? 'Connecting...'
-                            : 'Offline',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                ],
+                ),
               ),
             ),
 

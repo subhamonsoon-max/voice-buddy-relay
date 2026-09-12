@@ -33,7 +33,12 @@ class GeminiLiveRelay:
             summaries=self.summaries,
         )
 
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=settings.GEMINI_API_KEY, vertexai=False)
+        model_name = (
+            settings.LIVE_MODEL
+            if settings.LIVE_MODEL.startswith("models/")
+            else f"models/{settings.LIVE_MODEL}"
+        )
 
         config = types.LiveConnectConfig(
             response_modalities=[types.Modality.AUDIO],
@@ -49,11 +54,11 @@ class GeminiLiveRelay:
             ),
         )
 
-        logger.info(f"Connecting to Gemini Live API with model={settings.LIVE_MODEL}, voice={settings.VOICE_NAME}")
+        logger.info(f"Connecting to Gemini Live API with model={model_name}, voice={settings.VOICE_NAME}")
 
         try:
             async with client.aio.live.connect(
-                model=settings.LIVE_MODEL,
+                model=model_name,
                 config=config,
             ) as session:
                 logger.info("Connected to Gemini Live session. Starting audio pipes...")

@@ -42,8 +42,12 @@ class WebSocketService {
 
   WebSocketService({required this.audioService});
 
+  String? _lastWsUrl;
+  Timer? _reconnectTimer;
+
   /// Connect to the Python Relay server WebSocket
   Future<void> connect(String wsUrl) async {
+    _lastWsUrl = wsUrl;
     if (_status == ConnectionStatus.connected ||
         _status == ConnectionStatus.connecting) {
       return;
@@ -56,19 +60,18 @@ class WebSocketService {
       _channel = WebSocketChannel.connect(uri);
       await _channel!.ready;
 
-      _setStatus(ConnectionStatus.connected);
-      _setAvatarState(AvatarState.idle);
-
       // Listen for incoming messages from backend
       _wsSubscription = _channel!.stream.listen(
         _handleIncomingMessage,
         onError: (error) {
           _setStatus(ConnectionStatus.error);
           _setAvatarState(AvatarState.idle);
+          _scheduleReconnect();
         },
         onDone: () {
           _setStatus(ConnectionStatus.disconnected);
           _setAvatarState(AvatarState.idle);
+          _scheduleReconnect();
         },
       );
 
@@ -81,7 +84,17 @@ class WebSocketService {
       });
     } catch (e) {
       _setStatus(ConnectionStatus.error);
+      _scheduleReconnect();
     }
+  }
+
+  void _scheduleReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 3), () {
+      if (_status != ConnectionStatus.connected && _lastWsUrl != null) {
+        connect(_lastWsUrl!);
+      }
+    });
   }
 
   void _handleIncomingMessage(dynamic message) {
@@ -98,7 +111,10 @@ class WebSocketService {
         final Map<String, dynamic> data = jsonDecode(message);
         final String? type = data['type'];
 
-        if (type == 'interrupted') {
+        if (type == 'status' && data['status'] == 'ready') {
+          _setStatus(ConnectionStatus.connected);
+          _setAvatarState(AvatarState.idle);
+        } else if (type == 'interrupted') {
           audioService.stopPlayback();
           _setAvatarState(AvatarState.idle);
         } else if (type == 'turn_complete') {

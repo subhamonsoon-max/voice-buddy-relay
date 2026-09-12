@@ -46,7 +46,7 @@ async def summarize_session(
         )
 
     try:
-        client = genai.Client(api_key=key)
+        client = genai.Client(api_key=key, vertexai=False)
         prompt = SUMMARIZER_PROMPT.format(transcript=transcript)
 
         response = await client.aio.models.generate_content(
